@@ -77,24 +77,27 @@ main{max-width:1500px;margin:0 auto}
 @keyframes fade{from{opacity:0}}
 .p-bar{display:flex;align-items:center;gap:8px;padding:10px 12px}
 .p-bar .sp{flex:1}
-.p-stage{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
-.p-frame{width:100%;aspect-ratio:16/9;max-height:100%;background:#000}
+.p-stage{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden}
+.p-frame{width:100%;aspect-ratio:16/9;background:#000;flex:none}
 .p-frame iframe{width:100%;height:100%;border:0;display:block}
 .p-info{padding:14px 16px 20px;max-width:1100px;width:100%;margin:0 auto}
 .p-info h3{margin:0 0 4px;font-size:18px;line-height:1.3;text-wrap:balance}
 .p-info .sub a{color:var(--muted)}
 /* Querformat: Video füllt den Bildschirm, alles andere tritt zurück */
+/* Querformat am Handy und Vollbild: Video füllt den Bildschirm, Knöpfe schweben oben rechts.
+   Die Größe des Videos rechnet fitFrame() bei jeder Dreh- und Größenänderung neu aus. */
 @media (orientation:landscape) and (max-height:600px){
-  .p-info{display:none}
-  .p-bar{position:absolute;top:env(safe-area-inset-top,0px);right:env(safe-area-inset-right,0px);z-index:2;padding:8px;opacity:.55}
-  .p-bar:hover,.p-bar:focus-within{opacity:1}
-  .p-bar .sp,.p-bar .ext{display:none}
-  .p-stage{height:100%}
-  .p-frame{width:auto;height:100%;max-width:100%}
+  #player .p-info{display:none}
+  #player .p-bar{position:absolute;top:env(safe-area-inset-top,0px);right:env(safe-area-inset-right,0px);z-index:2;padding:8px;opacity:.55}
+  #player .p-bar .sp,#player .p-bar .ext{display:none}
+  #player .p-stage{position:absolute;inset:0}
 }
-@media (orientation:landscape) and (min-height:601px){
-  .p-frame{width:min(100%, calc((100dvh - 160px) * 16 / 9))}
-}
+#player.fs{padding:0}
+#player.fs .p-info{display:none}
+#player.fs .p-bar{position:absolute;top:0;right:0;z-index:2;padding:8px;opacity:.55}
+#player.fs .p-bar .sp,#player.fs .p-bar .ext{display:none}
+#player.fs .p-stage{position:absolute;inset:0}
+#player .p-bar:hover,#player .p-bar:focus-within{opacity:1}
 
 /* Einstellungen */
 dialog{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:14px;padding:0;width:min(640px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
@@ -434,6 +437,7 @@ function openVideo(id, fromHistory){
   $("#pYt").href = "https://www.youtube.com/watch?v=" + encodeURIComponent(id);
   $("#player").hidden = false;
   document.body.style.overflow = "hidden";
+  refit();
   seen.add(id); store.set("seen", [...seen].slice(-3000));
   if (!fromHistory) history.pushState({v:id}, "", "#v=" + id);
   $("#pClose").focus({preventScroll:true});
@@ -448,10 +452,35 @@ function closeVideo(fromHistory){
   if (!fromHistory && history.state?.v) history.back();
   render();
 }
+/* Video immer so groß wie möglich im 16:9-Format, nie abgeschnitten.
+   Rechnet nach Drehen mehrfach nach, weil Firefox die neue Größe verspätet meldet. */
+function fitFrame(){
+  if (!playing) return;
+  const st = $("#player .p-stage"), fr = $("#pFrame");
+  fr.style.width = fr.style.height = "";
+  const W = st.clientWidth, H = st.clientHeight;
+  if (!W || !H) return;
+  let w = W, h = W * 9 / 16;
+  if (h > H){ h = H; w = H * 16 / 9; }
+  fr.style.width = Math.floor(w) + "px"; fr.style.height = Math.floor(h) + "px";
+}
+function refit(){ fitFrame(); requestAnimationFrame(fitFrame); [120, 300, 600].forEach(t => setTimeout(fitFrame, t)); }
+window.addEventListener("resize", refit);
+window.addEventListener("orientationchange", refit);
+screen.orientation?.addEventListener?.("change", refit);
+window.visualViewport?.addEventListener("resize", refit);
+function onFs(){
+  const fs = (document.fullscreenElement || document.webkitFullscreenElement) === $("#player");
+  $("#player").classList.toggle("fs", fs);
+  if (!fs) window.scrollTo(0, 0);
+  refit();
+}
+document.addEventListener("fullscreenchange", onFs);
+document.addEventListener("webkitfullscreenchange", onFs);
 async function fullscreen(){
   const el = $("#player");
   try{
-    if (!document.fullscreenElement) await (el.requestFullscreen?.() || el.webkitRequestFullscreen?.());
+    if (!document.fullscreenElement) await (el.requestFullscreen?.({navigationUI:"hide"}) || el.webkitRequestFullscreen?.());
     else await document.exitFullscreen();
   }catch{}
 }
