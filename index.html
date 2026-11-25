@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d0f12">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Abofeed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: eine Zeitachse, Tage als klebende Abschnittsköpfe, darunter ein Raster aus Videokarten. Player liegt als Vollbreiten-Ebene darüber. */
+:root{
+  --bg:#0d0f12; --surface:#15181d; --surface-2:#1d2128; --line:#262b33;
+  --fg:#e7e9ec; --muted:#8a919c; --accent:#ff5a4e; --ok:#5fd39a;
+  --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg)}
+body{font:15px/1.45 var(--sans);-webkit-font-smoothing:antialiased;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-bottom:calc(32px + env(safe-area-inset-bottom,0px))}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+
+/* Kopfzeile */
+header.top{position:sticky;top:0;z-index:20;background:var(--bg);
+  margin:0 calc(-1 * max(16px,env(safe-area-inset-left,0px))) 0 calc(-1 * max(16px,env(safe-area-inset-right,0px)));
+  padding:calc(env(safe-area-inset-top,0px) + 12px) max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px));
+  border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.brand{font-weight:700;font-size:20px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.brand i{width:10px;height:10px;border-radius:50%;background:var(--accent);display:inline-block}
+.status{font:12px var(--mono);color:var(--muted);margin-left:auto;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.icon-btn{background:var(--surface);border:1px solid var(--line);border-radius:10px;height:38px;min-width:38px;padding:0 12px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.icon-btn:hover{background:var(--surface-2)}
+.icon-btn svg{width:18px;height:18px}
+.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+main{max-width:1500px;margin:0 auto}
+.msg{margin:16px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:14px}
+.msg.err{border-color:#6b2a26;background:#22140f}
+
+/* Tage */
+.day{margin-top:8px}
+.day h2{position:sticky;top:calc(env(safe-area-inset-top,0px) + 63px);z-index:10;margin:0;padding:14px 0 10px;background:var(--bg);
+  font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;gap:10px;align-items:baseline}
+.day h2 span{font:12px var(--mono);letter-spacing:0;text-transform:none;opacity:.7}
+.grid{display:grid;gap:18px 14px;grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
+@media (max-width:600px){.grid{grid-template-columns:1fr;gap:20px}}
+
+.card{all:unset;display:flex;flex-direction:column;gap:9px;cursor:pointer;min-width:0;border-radius:12px}
+.thumb{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:var(--surface-2);max-width:100%}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s ease}
+.card:hover .thumb img{transform:scale(1.03)}
+.dur{position:absolute;right:7px;bottom:7px;background:rgba(0,0,0,.82);color:#fff;font:500 12px var(--mono);padding:2px 6px;border-radius:5px}
+.badge{position:absolute;left:7px;top:7px;background:var(--accent);color:#fff;font:600 11px var(--sans);letter-spacing:.05em;text-transform:uppercase;padding:3px 7px;border-radius:5px}
+.card.seen .thumb::after{content:"";position:absolute;inset:0;background:rgba(13,15,18,.55)}
+.card.seen .thumb .bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--accent);z-index:1}
+.meta{display:flex;gap:10px;min-width:0}
+.avatar{width:34px;height:34px;border-radius:50%;flex:none;background:var(--surface-2);object-fit:cover}
+.meta-txt{min-width:0}
+.title{font-weight:600;font-size:15px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card.seen .title{color:var(--muted)}
+.sub{color:var(--muted);font-size:13px;margin-top:2px;display:flex;gap:6px;flex-wrap:wrap}
+.sub time{font-family:var(--mono);font-size:12px;padding-top:1px}
+.more{display:flex;justify-content:center;margin:28px 0}
+
+/* Player-Ebene */
+#player{position:fixed;inset:0;z-index:100;background:rgba(5,6,8,.96);display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);
+  animation:fade .18s ease}
+@keyframes fade{from{opacity:0}}
+.p-bar{display:flex;align-items:center;gap:8px;padding:10px 12px}
+.p-bar .sp{flex:1}
+.p-stage{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
+.p-frame{width:100%;aspect-ratio:16/9;max-height:100%;background:#000}
+.p-frame iframe{width:100%;height:100%;border:0;display:block}
+.p-info{padding:14px 16px 20px;max-width:1100px;width:100%;margin:0 auto}
+.p-info h3{margin:0 0 4px;font-size:18px;line-height:1.3;text-wrap:balance}
+.p-info .sub a{color:var(--muted)}
+/* Querformat: Video füllt den Bildschirm, alles andere tritt zurück */
+@media (orientation:landscape) and (max-height:600px){
+  .p-info{display:none}
+  .p-bar{position:absolute;top:env(safe-area-inset-top,0px);right:env(safe-area-inset-right,0px);z-index:2;padding:8px;opacity:.55}
+  .p-bar:hover,.p-bar:focus-within{opacity:1}
+  .p-bar .sp,.p-bar .ext{display:none}
+  .p-stage{height:100%}
+  .p-frame{width:auto;height:100%;max-width:100%}
+}
+@media (orientation:landscape) and (min-height:601px){
+  .p-frame{width:min(100%, calc((100dvh - 160px) * 16 / 9))}
+}
+
+/* Einstellungen */
+dialog{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:14px;padding:0;width:min(640px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.dlg{padding:18px 20px 22px;display:flex;flex-direction:column;gap:22px}
+.dlg h2{margin:0;font-size:20px}
+.dlg h3{margin:0 0 6px;font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.dlg p{margin:0 0 10px;color:var(--muted);font-size:14px;max-width:60ch}
+.dlg a{color:var(--fg)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row input[type=text],.row input[type=password]{flex:1 1 220px;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+.btn{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-weight:600}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:hover{filter:brightness(1.12)}
+label.chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;margin-top:6px}
+label.chk input{margin-top:3px;accent-color:var(--accent)}
+.chlist{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.ch{display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);font-size:14px}
+.ch:last-child{border-bottom:0}
+.ch img{width:26px;height:26px;border-radius:50%}
+.ch span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch button{background:none;border:0;color:var(--muted);padding:4px 8px;border-radius:6px}
+.ch button:hover{color:var(--accent);background:var(--surface-2)}
+.note{font:12px var(--mono);color:var(--muted)}
+.ok{color:var(--ok)}
+
+/* Erster Start */
+.welcome{max-width:640px;margin:40px auto;display:flex;flex-direction:column;gap:14px}
+.welcome h1{font-size:30px;line-height:1.15;margin:0;letter-spacing:-.02em;text-wrap:balance}
+.welcome ol{margin:0;padding-left:22px;color:var(--muted);display:flex;flex-direction:column;gap:8px}
+.welcome ol b{color:var(--fg)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><i></i>Abofeed</div>
+  <div class="status" id="status"></div>
+  <button class="icon-btn" id="btnRefresh" title="Neu laden" aria-label="Neu laden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
+  <button class="icon-btn" id="btnSettings" title="Einstellungen" aria-label="Einstellungen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--bg)"/><circle cx="15" cy="12" r="2" fill="var(--bg)"/><circle cx="7" cy="18" r="2" fill="var(--bg)"/></svg></button>
+</header>
+
+<main>
+  <div id="error" class="msg err" hidden></div>
+  <section class="welcome" id="welcome" hidden>
+    <h1>Deine Abos. Neueste zuerst. Sonst nichts.</h1>
+    <ol>
+      <li><b>Mit Google anmelden:</b> die Seite liest deine Abos direkt aus deinem YouTube-Konto.</li>
+      <li><b>Optional ein API-Schlüssel,</b> damit der Feed auch ohne erneute Anmeldung aktuell bleibt.</li>
+      <li>Fertig. Die Seite lädt die letzten Uploads aller Kanäle und sortiert sie streng nach Datum.</li>
+    </ol>
+    <div><button class="btn primary" id="btnStart">Einrichten</button></div>
+  </section>
+  <div id="feed"></div>
+  <div class="more" id="moreWrap" hidden><button class="btn" id="btnMore">Ältere anzeigen</button></div>
+</main>
+
+<div id="player" hidden role="dialog" aria-modal="true" aria-label="Video">
+  <div class="p-bar">
+    <button class="icon-btn" id="pClose" aria-label="Schließen" title="Schließen (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="sp"></div>
+    <a class="icon-btn ext" id="pYt" target="_blank" rel="noopener" title="Auf YouTube öffnen" style="text-decoration:none;color:inherit">YouTube ↗</a>
+    <button class="icon-btn" id="pFs" aria-label="Vollbild" title="Vollbild"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  </div>
+  <div class="p-stage"><div class="p-frame" id="pFrame"></div></div>
+  <div class="p-info"><h3 id="pTitle"></h3><div class="sub" id="pSub"></div></div>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" class="dlg" id="settingsForm">
+    <div class="row" style="align-items:center"><h2 style="flex:1">Einstellungen</h2><button class="btn" value="close">Fertig</button></div>
+
+    <section>
+      <h3>1 · Mit Google anmelden</h3>
+      <p>Die Anmeldung holt deine Abos direkt von YouTube (nur Lesezugriff, Berechtigung <code>youtube.readonly</code>). Dafür braucht die Seite eine OAuth-Client-ID aus deinem eigenen Google-Cloud-Projekt, Typ „Webanwendung“, mit der Adresse dieser Seite als „Autorisierter JavaScript-Ursprung“.</p>
+      <div class="row"><input type="text" id="clientInput" placeholder="…apps.googleusercontent.com" autocomplete="off" spellcheck="false"><button class="btn" type="button" id="btnClient">Speichern</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn primary" type="button" id="btnLogin">Mit Google anmelden und Abos holen</button><button class="btn" type="button" id="btnLogout" hidden>Abmelden</button></div>
+      <div class="note" id="loginNote"></div>
+    </section>
+
+    <section>
+      <h3>2 · API-Schlüssel <span style="text-transform:none;letter-spacing:0">(empfohlen)</span></h3>
+      <p>Die Seite fragt die YouTube Data API v3 direkt aus deinem Browser ab. Den Schlüssel bekommst du in der <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">Google Cloud Console</a>: Projekt anlegen, „YouTube Data API v3“ aktivieren, unter „Anmeldedaten“ einen API-Schlüssel erstellen. Er bleibt nur in diesem Browser gespeichert. Ohne Schlüssel lädt der Feed über die Anmeldung, die nach einer Stunde abläuft; dann reicht ein Tipp auf „Neu anmelden“.</p>
+      <div class="row"><input type="password" id="keyInput" placeholder="AIza…" autocomplete="off" spellcheck="false"><button class="btn" type="button" id="btnKey">Speichern</button></div>
+      <div class="note" id="keyNote"></div>
+    </section>
+
+    <section>
+      <h3>3 · Abos ohne Anmeldung</h3>
+      <p>Am schnellsten über <a href="https://takeout.google.com/" target="_blank" rel="noopener">Google Takeout</a>: nur „YouTube und YouTube Music“ wählen, unter „Alle YouTube-Daten enthalten“ nur „Abos“ anhaken. Im ZIP liegt <code>abos.csv</code> bzw. <code>subscriptions.csv</code>.</p>
+      <div class="row">
+        <label class="btn" style="display:inline-block">CSV importieren<input type="file" id="csvInput" accept=".csv,text/csv" hidden></label>
+      </div>
+      <p style="margin-top:12px">Oder einzeln: Kanal-URL, @Handle oder Kanal-ID.</p>
+      <div class="row"><input type="text" id="addInput" placeholder="@kanalname oder https://youtube.com/@…" spellcheck="false"><button class="btn" type="button" id="btnAdd">Hinzufügen</button></div>
+      <div class="note" id="chNote"></div>
+      <div class="chlist" id="chList" style="margin-top:10px"></div>
+    </section>
+
+    <section>
+      <h3>4 · Filter und Player</h3>
+      <label class="chk"><input type="checkbox" id="optShorts"> Shorts ausblenden <span class="note">(Videos bis 3 Min. im Hochformat lassen sich per API nicht sicher erkennen; Grenze ist die Länge)</span></label>
+      <label class="chk"><input type="checkbox" id="optUpcoming" checked> Angekündigte Premieren und Livestreams ausblenden, bis sie laufen</label>
+      <label class="chk"><input type="checkbox" id="optNocookie" checked> youtube-nocookie.com als Player <span class="note">(Aus: normaler YouTube-Player. Nur der erkennt dein Premium-Konto, und nur wenn der Browser YouTube-Cookies in eingebetteten Playern zulässt.)</span></label>
+    </section>
+
+    <section>
+      <h3>Sicherung</h3>
+      <p>Abos und Einstellungen liegen nur in diesem Browser. Für Handy und Rechner: hier exportieren, dort einfügen.</p>
+      <div class="row"><button class="btn" type="button" id="btnExport">Kanalliste kopieren</button><button class="btn" type="button" id="btnImportJson">Kanalliste einfügen</button></div>
+      <textarea id="jsonBox" hidden style="width:100%;min-height:90px;margin-top:8px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px;font:12px var(--mono)"></textarea>
+      <div class="note" id="bkNote"></div>
+    </section>
+  </form>
+</dialog>
+
+<script>
+(() => {
+"use strict";
+const API = "https://www.googleapis.com/youtube/v3/";
+const PER_CHANNEL = 15;          // neueste Uploads je Kanal pro Abruf
+const KEEP_DAYS = 45;            // so lange bleiben Videos im lokalen Speicher
+const AUTO_REFRESH_MIN = 15;
+const PAGE = 60;
+
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem("abofeed."+k); return v==null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem("abofeed."+k, JSON.stringify(v)); }catch{} }
+};
+
+let key = store.get("key", "");
+let channels = store.get("channels", []);    // [{id,title,thumb,uploads}]
+let videos = store.get("videos", {});        // id -> {id,t,ch,chId,pub,thumb,dur,live}
+let seen = new Set(store.get("seen", []));
+let opts = Object.assign({shorts:false, upcoming:true, nocookie:true}, store.get("opts", {}));
+let clientId = store.get("clientId", "") || "30731000348-ffaqccp871p8ud818fdqm89t5f0n5mbb.apps.googleusercontent.com";
+let tok = store.get("tok", null);            // {t, exp}
+const tokenOk = () => tok && tok.exp > Date.now() + 60e3;
+let lastFetch = store.get("lastFetch", 0);
+let shown = PAGE;
+let busy = false;
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const safeImg = u => (typeof u === "string" && u.startsWith("https://")) ? u : "";
+
+/* ---------- API ---------- */
+async function api(path, params){
+  const u = new URL(API + path);
+  for (const [k,v] of Object.entries(params)) u.searchParams.set(k, v);
+  const headers = {};
+  if (key) u.searchParams.set("key", key);
+  else if (tokenOk()) headers.Authorization = "Bearer " + tok.t;
+  else { const e = new Error("Anmeldung abgelaufen"); e.reason = "authExpired"; throw e; }
+  const r = await fetch(u, {headers, referrerPolicy:"strict-origin-when-cross-origin"});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok){
+    const reason = j?.error?.errors?.[0]?.reason || j?.error?.status || r.status;
+    const e = new Error(j?.error?.message || ("HTTP " + r.status)); e.reason = reason; e.status = r.status; throw e;
+  }
+  return j;
+}
+function explain(e){
+  const r = String(e.reason || "");
+  if (r === "authExpired" || e.status === 401) return "Die Google-Anmeldung ist abgelaufen. Tippe auf „Neu anmelden“ oder hinterlege einen API-Schlüssel, dann passiert das nicht mehr.";
+  if (r === "quotaExceeded" || r === "dailyLimitExceeded") return "Tageskontingent der API ist aufgebraucht. Es setzt sich um 9 Uhr (Mitternacht US-Pazifikzeit) zurück.";
+  if (r === "keyInvalid" || /API key not valid/i.test(e.message)) return "Der API-Schlüssel ist ungültig. Prüfe ihn in den Einstellungen.";
+  if (r === "accessNotConfigured" || r === "SERVICE_DISABLED") return "Die YouTube Data API v3 ist im Google-Cloud-Projekt noch nicht aktiviert.";
+  if (e.status === 403) return "Google hat die Anfrage abgelehnt (" + r + "). Falls der Schlüssel auf Websites eingeschränkt ist: stimmt die Adresse dieser Seite?";
+  if (e instanceof TypeError) return "Keine Verbindung zur YouTube-API.";
+  return "Fehler: " + e.message;
+}
+async function pool(items, n, fn){
+  const out = []; let i = 0;
+  await Promise.all(Array.from({length: Math.min(n, items.length)}, async () => {
+    while (i < items.length){ const k = i++; try{ out[k] = await fn(items[k]); }catch(e){ out[k] = {error:e}; } }
+  }));
+  return out;
+}
+function isoDur(s){
+  const m = /P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(s || ""); if (!m) return 0;
+  return (+m[1]||0)*86400 + (+m[2]||0)*3600 + (+m[3]||0)*60 + (+m[4]||0);
+}
+
+/* Kanaldetails (Titel, Bild, Upload-Playlist) für bis zu 50 IDs je Anfrage */
+async function resolveChannels(ids){
+  const res = {};
+  for (let i = 0; i < ids.length; i += 50){
+    const j = await api("channels", {part:"snippet,contentDetails", id: ids.slice(i, i+50).join(","), maxResults: 50});
+    for (const it of j.items || []){
+      res[it.id] = { id: it.id, title: it.snippet?.title || it.id,
+        thumb: it.snippet?.thumbnails?.default?.url || "",
+        uploads: it.contentDetails?.relatedPlaylists?.uploads || ("UU" + it.id.slice(2)) };
+    }
+  }
+  return res;
+}
+
+async function refresh(manual){
+  if (busy || !(key || tokenOk()) || !channels.length) {
+    if (!busy && !key && tok && !tokenOk() && channels.length) showError(explain({reason:"authExpired"}), true);
+    render(); return;
+  }
+  busy = true; setBusy(true); hideError();
+  try{
+    // fehlende Kanaldetails nachholen (z. B. nach CSV-Import ohne Schlüssel)
+    const missing = channels.filter(c => !c.thumb).map(c => c.id);
+    if (missing.length){
+      const info = await resolveChannels(missing);
+      channels = channels.map(c => info[c.id] ? {...c, ...info[c.id]} : c);
+      store.set("channels", channels);
+    }
+    const chMap = Object.fromEntries(channels.map(c => [c.id, c]));
+    let done = 0, failed = [];
+    const results = await pool(channels, 8, async c => {
+      const j = await api("playlistItems", {part:"snippet,contentDetails", playlistId: c.uploads || ("UU"+c.id.slice(2)), maxResults: PER_CHANNEL});
+      setStatus("Lade Kanäle … " + (++done) + "/" + channels.length);
+      return j.items || [];
+    });
+    const fresh = [];
+    results.forEach((r, i) => {
+      if (r?.error){
+        if (r.error.status === 401) r.error.reason = "authError";
+        if (["quotaExceeded","keyInvalid","accessNotConfigured","dailyLimitExceeded","authExpired","authError"].includes(r.error.reason) || r.error instanceof TypeError) throw r.error;
+        failed.push(channels[i].title); return;
+      }
+      for (const it of r){
+        const id = it.contentDetails?.videoId; const sn = it.snippet || {};
+        if (!id || sn.title === "Private video" || sn.title === "Deleted video") continue;
+        const old = videos[id] || {};
+        videos[id] = { ...old, id, t: sn.title, chId: sn.channelId || channels[i].id,
+          ch: chMap[sn.channelId]?.title || sn.channelTitle || channels[i].title,
+          pub: it.contentDetails.videoPublishedAt || sn.publishedAt,
+          thumb: sn.thumbnails?.medium?.url || sn.thumbnails?.default?.url || old.thumb || "" };
+        if (old.dur == null) fresh.push(id);
+      }
+    });
+    // Länge und Live-Status für neue Videos, 50 je Anfrage
+    for (let i = 0; i < fresh.length; i += 50){
+      const j = await api("videos", {part:"contentDetails,snippet", id: fresh.slice(i, i+50).join(","), maxResults: 50});
+      for (const v of j.items || []){
+        if (!videos[v.id]) continue;
+        videos[v.id].dur = isoDur(v.contentDetails?.duration);
+        videos[v.id].live = v.snippet?.liveBroadcastContent || "none";
+      }
+    }
+    // aufräumen
+    const cutoff = Date.now() - KEEP_DAYS*864e5;
+    const subs = new Set(channels.map(c => c.id));
+    for (const [id, v] of Object.entries(videos)) if (new Date(v.pub) < cutoff || !subs.has(v.chId)) delete videos[id];
+    store.set("videos", videos);
+    lastFetch = Date.now(); store.set("lastFetch", lastFetch);
+    if (failed.length) showError("Nicht geladen: " + failed.slice(0,5).join(", ") + (failed.length > 5 ? " und " + (failed.length-5) + " weitere" : "") + ". Vermutlich gelöscht oder umbenannt.");
+  }catch(e){
+    showError(explain(e));
+  }finally{
+    busy = false; setBusy(false); render();
+  }
+}
+
+/* ---------- Darstellung ---------- */
+const dayFmt = new Intl.DateTimeFormat("de-DE", {weekday:"long", day:"numeric", month:"long"});
+const timeFmt = new Intl.DateTimeFormat("de-DE", {hour:"2-digit", minute:"2-digit"});
+function dayLabel(d){
+  const a = new Date(d); a.setHours(0,0,0,0);
+  const t = new Date(); t.setHours(0,0,0,0);
+  const diff = Math.round((t - a) / 864e5);
+  if (diff === 0) return "Heute";
+  if (diff === 1) return "Gestern";
+  return dayFmt.format(d);
+}
+function fmtDur(s){
+  if (!s) return "";
+  const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+  return (h ? h + ":" + String(m).padStart(2,"0") : m) + ":" + String(x).padStart(2,"0");
+}
+function ago(ms){
+  const m = Math.round((Date.now() - ms)/60000);
+  if (m < 1) return "gerade eben"; if (m < 60) return "vor " + m + " Min.";
+  const h = Math.round(m/60); return h < 24 ? "vor " + h + " Std." : "vor " + Math.round(h/24) + " Tg.";
+}
+function visible(){
+  return Object.values(videos)
+    .filter(v => !(opts.upcoming && v.live === "upcoming"))
+    .filter(v => !(opts.shorts && v.dur && v.dur <= 180 && v.live !== "live"))
+    .sort((a, b) => new Date(b.pub) - new Date(a.pub));
+}
+function render(){
+  const setupNeeded = !(key || tok) || !channels.length;
+  $("#welcome").hidden = !setupNeeded || Object.keys(videos).length > 0;
+  const list = visible();
+  const feed = $("#feed");
+  const thumbs = Object.fromEntries(channels.map(c => [c.id, c.thumb]));
+  let html = "", cur = "";
+  for (const v of list.slice(0, shown)){
+    const d = new Date(v.pub); const lbl = dayLabel(d);
+    if (lbl !== cur){
+      if (cur) html += "</div></section>";
+      const count = list.filter(x => dayLabel(new Date(x.pub)) === lbl).length;
+      html += `<section class="day"><h2>${esc(lbl)}<span>${count} ${count === 1 ? "Video" : "Videos"}</span></h2><div class="grid">`;
+      cur = lbl;
+    }
+    const live = v.live === "live" ? `<span class="badge">Live</span>` : v.live === "upcoming" ? `<span class="badge">Bald</span>` : "";
+    html += `<button class="card${seen.has(v.id) ? " seen" : ""}" data-id="${esc(v.id)}">
+      <div class="thumb"><img loading="lazy" alt="" src="${esc(safeImg(v.thumb))}">${live}${v.dur ? `<span class="dur">${fmtDur(v.dur)}</span>` : ""}${seen.has(v.id) ? '<span class="bar"></span>' : ""}</div>
+      <div class="meta"><img class="avatar" alt="" loading="lazy" onerror="this.style.visibility='hidden'" src="${esc(safeImg(thumbs[v.chId]))}">
+        <div class="meta-txt"><div class="title">${esc(v.t)}</div>
+        <div class="sub"><span>${esc(v.ch)}</span>·<time datetime="${esc(v.pub)}">${timeFmt.format(d)}</time></div></div></div>
+    </button>`;
+  }
+  if (cur) html += "</div></section>";
+  if (!list.length && !setupNeeded && !busy) html = `<div class="msg">Noch keine Videos geladen. Tippe oben auf Neu laden.</div>`;
+  feed.innerHTML = html;
+  $("#moreWrap").hidden = list.length <= shown;
+  setStatus(busy ? "Lade …" : lastFetch ? channels.length + " Kanäle · " + ago(lastFetch) : "");
+}
+function setStatus(s){ $("#status").textContent = s; }
+function setBusy(b){ $("#btnRefresh").classList.toggle("spin", b); }
+function showError(s, relogin){
+  const e = $("#error"); e.textContent = s; e.hidden = false;
+  if ((relogin || /Anmeldung ist abgelaufen/.test(s)) && clientId){
+    const b = document.createElement("button"); b.className = "btn primary"; b.style.marginLeft = "10px";
+    b.textContent = "Neu anmelden"; b.onclick = () => login(false); e.append(b);
+  }
+}
+function hideError(){ $("#error").hidden = true; }
+
+/* ---------- Player ---------- */
+let playing = null;
+function openVideo(id, fromHistory){
+  const v = videos[id]; if (!v) return;
+  playing = id;
+  const src = (opts.nocookie ? "https://www.youtube-nocookie.com/embed/" : "https://www.youtube.com/embed/") + encodeURIComponent(id) + "?autoplay=1&rel=0&playsinline=1&modestbranding=1";
+  $("#pFrame").innerHTML = `<iframe src="${esc(src)}" title="${esc(v.t)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+  $("#pTitle").textContent = v.t;
+  $("#pSub").innerHTML = `<a href="https://www.youtube.com/channel/${encodeURIComponent(v.chId)}" target="_blank" rel="noopener">${esc(v.ch)}</a>·<time>${esc(dayFmt.format(new Date(v.pub)))}, ${timeFmt.format(new Date(v.pub))}</time>`;
+  $("#pYt").href = "https://www.youtube.com/watch?v=" + encodeURIComponent(id);
+  $("#player").hidden = false;
+  document.body.style.overflow = "hidden";
+  seen.add(id); store.set("seen", [...seen].slice(-3000));
+  if (!fromHistory) history.pushState({v:id}, "", "#v=" + id);
+  $("#pClose").focus({preventScroll:true});
+}
+function closeVideo(fromHistory){
+  if (!playing) return;
+  playing = null;
+  $("#pFrame").innerHTML = "";
+  $("#player").hidden = true;
+  document.body.style.overflow = "";
+  if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  if (!fromHistory && history.state?.v) history.back();
+  render();
+}
+async function fullscreen(){
+  const el = $("#player");
+  try{
+    if (!document.fullscreenElement) await (el.requestFullscreen?.() || el.webkitRequestFullscreen?.());
+    else await document.exitFullscreen();
+  }catch{}
+}
+window.addEventListener("popstate", () => {
+  const m = /#v=([\w-]{6,})/.exec(location.hash);
+  if (m && videos[m[1]]) openVideo(m[1], true); else closeVideo(true);
+});
+
+/* ---------- Kanäle verwalten ---------- */
+function parseCSV(text){
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){ if (c === '"'){ if (text[i+1] === '"'){ f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ","){ row.push(f); f = ""; }
+    else if (c === "\n" || c === "\r"){ if (c === "\r" && text[i+1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += c;
+  }
+  if (f || row.length){ row.push(f); rows.push(row); }
+  return rows;
+}
+function addChannels(list){
+  const have = new Set(channels.map(c => c.id)); let n = 0;
+  for (const c of list) if (c.id && !have.has(c.id)){ channels.push(c); have.add(c.id); n++; }
+  channels.sort((a,b) => a.title.localeCompare(b.title, "de"));
+  store.set("channels", channels);
+  return n;
+}
+async function importCSV(file){
+  const rows = parseCSV(await file.text());
+  const found = [];
+  for (const r of rows){
+    const idIdx = r.findIndex(x => /^UC[\w-]{22}$/.test(x.trim()));
+    if (idIdx < 0) continue;
+    const id = r[idIdx].trim();
+    const title = (r.slice().reverse().find(x => x.trim() && !/^UC[\w-]{22}$/.test(x.trim()) && !/^https?:/.test(x.trim())) || id).trim();
+    found.push({id, title, thumb:"", uploads: "UU" + id.slice(2)});
+  }
+  if (!found.length){ $("#chNote").textContent = "In der Datei wurden keine Kanal-IDs gefunden."; return; }
+  const n = addChannels(found);
+  $("#chNote").innerHTML = `<span class="ok">${n} neue Kanäle importiert</span> (${found.length} in der Datei).`;
+  renderChannels();
+}
+async function addOne(raw){
+  const s = raw.trim(); if (!s) return;
+  const note = $("#chNote");
+  if (!key && !tokenOk()){ note.textContent = "Zuerst anmelden oder den API-Schlüssel speichern."; return; }
+  note.textContent = "Suche …";
+  try{
+    let params;
+    const id = /(UC[\w-]{22})/.exec(s)?.[1];
+    const handle = /@([\w.\-·]+)/.exec(s)?.[1];
+    const user = /youtube\.com\/user\/([\w.\-]+)/.exec(s)?.[1];
+    if (id) params = {id};
+    else if (handle) params = {forHandle: "@" + handle};
+    else if (user) params = {forUsername: user};
+    else if (/^[\w.\-]+$/.test(s)) params = {forHandle: "@" + s};
+    else { note.textContent = "Format nicht erkannt. Nimm die Kanal-URL mit @Handle oder die Kanal-ID (UC…)."; return; }
+    const j = await api("channels", {part:"snippet,contentDetails", ...params});
+    const it = j.items?.[0];
+    if (!it){ note.textContent = "Kanal nicht gefunden."; return; }
+    const n = addChannels([{ id: it.id, title: it.snippet.title, thumb: it.snippet.thumbnails?.default?.url || "", uploads: it.contentDetails.relatedPlaylists.uploads }]);
+    note.innerHTML = n ? `<span class="ok">${esc(it.snippet.title)} hinzugefügt.</span>` : esc(it.snippet.title) + " ist schon drin.";
+    $("#addInput").value = "";
+    renderChannels(); lastFetch = 0;
+  }catch(e){ note.textContent = explain(e); }
+}
+function renderChannels(){
+  const el = $("#chList");
+  el.innerHTML = channels.length ? channels.map(c => `<div class="ch">${c.thumb ? `<img alt="" src="${esc(safeImg(c.thumb))}">` : ""}<span>${esc(c.title)}</span><button type="button" data-rm="${esc(c.id)}" aria-label="${esc(c.title)} entfernen">Entfernen</button></div>`).join("")
+    : `<div class="ch"><span class="note">Noch keine Kanäle.</span></div>`;
+  el.hidden = false;
+}
+
+/* ---------- Google-Anmeldung (Google Identity Services, Token-Modell) ---------- */
+let gisLoaded = null;
+function loadGis(){
+  return gisLoaded ||= new Promise((ok, fail) => {
+    const s = document.createElement("script"); s.src = "https://accounts.google.com/gsi/client"; s.async = true;
+    s.onload = ok; s.onerror = () => { gisLoaded = null; fail(new Error("Google-Anmeldung konnte nicht geladen werden.")); };
+    document.head.append(s);
+  });
+}
+async function login(syncSubs){
+  const note = $("#loginNote");
+  if (!clientId){ openSettings(); note.textContent = "Zuerst die OAuth-Client-ID speichern."; return; }
+  note.textContent = "Öffne Google-Anmeldung …";
+  try{ await loadGis(); }catch(e){ note.textContent = e.message; showError(e.message); return; }
+  const client = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: "https://www.googleapis.com/auth/youtube.readonly",
+    prompt: "",
+    callback: async resp => {
+      if (resp.error){ note.textContent = "Anmeldung abgebrochen (" + resp.error + ")."; return; }
+      tok = { t: resp.access_token, exp: Date.now() + (resp.expires_in || 3600) * 1000 }; store.set("tok", tok);
+      note.innerHTML = '<span class="ok">Angemeldet.</span>'; hideError(); updateLoginUi();
+      if (syncSubs || !channels.length) await syncSubscriptions();
+      refresh(true);
+    },
+    error_callback: err => { note.textContent = "Anmeldung nicht möglich: " + (err?.type || "unbekannt") + ". Popups erlaubt?"; }
+  });
+  client.requestAccessToken();
+}
+async function syncSubscriptions(){
+  const note = $("#loginNote");
+  note.textContent = "Hole Abos …";
+  const saveKey = key; key = "";          // Abos von „mine“ gehen nur mit Anmeldung
+  try{
+    const subs = []; let page = "";
+    do{
+      const j = await api("subscriptions", {part:"snippet", mine:"true", maxResults:50, order:"alphabetical", ...(page ? {pageToken: page} : {})});
+      for (const it of j.items || []){
+        const id = it.snippet?.resourceId?.channelId; if (!id) continue;
+        subs.push({ id, title: it.snippet.title || id, thumb: it.snippet.thumbnails?.default?.url || "", uploads: "UU" + id.slice(2) });
+      }
+      page = j.nextPageToken || "";
+      note.textContent = "Hole Abos … " + subs.length;
+    } while (page);
+    const old = Object.fromEntries(channels.map(c => [c.id, c]));
+    channels = subs.map(c => old[c.id]?.uploads ? {...c, uploads: old[c.id].uploads} : c)
+                   .sort((a,b) => a.title.localeCompare(b.title, "de"));
+    store.set("channels", channels); store.set("lastSync", Date.now());
+    note.innerHTML = `<span class="ok">${channels.length} Abos von YouTube übernommen.</span>`;
+    renderChannels();
+  }catch(e){ note.textContent = explain(e); }
+  finally{ key = saveKey; }
+}
+function updateLoginUi(){
+  $("#btnLogout").hidden = !tok;
+  $("#btnLogin").textContent = tok ? "Abos neu von YouTube holen" : "Mit Google anmelden und Abos holen";
+}
+$("#btnClient").onclick = () => { clientId = $("#clientInput").value.trim(); store.set("clientId", clientId); $("#loginNote").textContent = clientId ? "Client-ID gespeichert." : "Client-ID entfernt."; };
+$("#btnLogin").onclick = () => login(true);
+$("#btnLogout").onclick = () => {
+  if (tok && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(tok.t, () => {});
+  tok = null; store.set("tok", null); updateLoginUi(); $("#loginNote").textContent = "Abgemeldet. Die Abo-Liste bleibt gespeichert.";
+};
+
+/* ---------- Ereignisse ---------- */
+$("#feed").addEventListener("click", e => { const c = e.target.closest(".card"); if (c) openVideo(c.dataset.id); });
+$("#btnMore").onclick = () => { shown += PAGE; render(); };
+$("#btnRefresh").onclick = () => refresh(true);
+$("#pClose").onclick = () => closeVideo();
+$("#pFs").onclick = fullscreen;
+$("#player").addEventListener("click", e => { if (e.target.classList.contains("p-stage")) closeVideo(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && playing && !document.fullscreenElement) closeVideo(); });
+
+const dlg = $("#settings");
+function openSettings(){
+  $("#keyInput").value = key; $("#clientInput").value = clientId; updateLoginUi();
+  $("#optNocookie").checked = !!opts.nocookie;
+  $("#keyNote").textContent = key ? "Schlüssel gespeichert." : "";
+  $("#optShorts").checked = !!opts.shorts; $("#optUpcoming").checked = !!opts.upcoming;
+  renderChannels(); dlg.showModal();
+}
+$("#btnSettings").onclick = openSettings;
+$("#btnStart").onclick = openSettings;
+dlg.addEventListener("close", () => { if ((key || tokenOk()) && channels.length && Date.now() - lastFetch > 60e3) refresh(); else render(); });
+$("#btnKey").onclick = async () => {
+  key = $("#keyInput").value.trim(); store.set("key", key);
+  const note = $("#keyNote");
+  if (!key){ note.textContent = "Schlüssel entfernt."; return; }
+  note.textContent = "Prüfe …";
+  try{ await api("channels", {part:"id", id:"UC_x5XG1OV2P6uZZ5FSM9Ttw"}); note.innerHTML = '<span class="ok">Schlüssel funktioniert.</span>'; }
+  catch(e){ note.textContent = explain(e); }
+};
+$("#csvInput").onchange = e => { const f = e.target.files[0]; if (f) importCSV(f); e.target.value = ""; };
+$("#btnAdd").onclick = () => addOne($("#addInput").value);
+$("#addInput").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); addOne(e.target.value); } });
+$("#chList").addEventListener("click", e => {
+  const id = e.target.dataset?.rm; if (!id) return;
+  channels = channels.filter(c => c.id !== id); store.set("channels", channels);
+  for (const [vid, v] of Object.entries(videos)) if (v.chId === id) delete videos[vid];
+  store.set("videos", videos); renderChannels();
+});
+$("#optShorts").onchange = e => { opts.shorts = e.target.checked; store.set("opts", opts); };
+$("#optUpcoming").onchange = e => { opts.upcoming = e.target.checked; store.set("opts", opts); };
+$("#optNocookie").onchange = e => { opts.nocookie = e.target.checked; store.set("opts", opts); };
+$("#btnExport").onclick = async () => {
+  const txt = JSON.stringify(channels.map(c => ({id:c.id, title:c.title})));
+  const box = $("#jsonBox"); box.hidden = false; box.value = txt; box.select();
+  try{ await navigator.clipboard.writeText(txt); $("#bkNote").innerHTML = '<span class="ok">' + channels.length + ' Kanäle in die Zwischenablage kopiert.</span>'; }
+  catch{ $("#bkNote").textContent = "Text oben markiert, bitte selbst kopieren."; }
+};
+$("#btnImportJson").onclick = () => {
+  const box = $("#jsonBox");
+  if (box.hidden || !box.value.trim()){ box.hidden = false; box.value = ""; box.placeholder = "Exportierte Kanalliste hier einfügen, dann erneut auf „Kanalliste einfügen“ tippen."; box.focus(); return; }
+  try{
+    const arr = JSON.parse(box.value);
+    const n = addChannels(arr.filter(c => /^UC[\w-]{22}$/.test(c.id)).map(c => ({id:c.id, title:String(c.title||c.id), thumb:"", uploads:"UU"+c.id.slice(2)})));
+    $("#bkNote").innerHTML = `<span class="ok">${n} Kanäle übernommen.</span>`; box.value = ""; renderChannels();
+  }catch{ $("#bkNote").textContent = "Das sieht nicht nach einer exportierten Kanalliste aus."; }
+};
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - lastFetch > AUTO_REFRESH_MIN*60e3) refresh();
+});
+
+render();
+if (Date.now() - lastFetch > AUTO_REFRESH_MIN*60e3) refresh();
+const m0 = /#v=([\w-]{6,})/.exec(location.hash);
+if (m0 && videos[m0[1]]) { history.replaceState(null, "", location.pathname); openVideo(m0[1]); }
+})();
+</script>
+</body>
+</html>
